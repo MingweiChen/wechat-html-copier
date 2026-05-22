@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>微信公众号富文本复制工具</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      padding: 30px;
+      width: 100%;
+      max-width: 800px;
+    }
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 24px;
+      color: #1a1a2e;
+    }
+    .subtitle {
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 20px;
+    }
+    textarea {
+      width: 100%;
+      height: 400px;
+      border: 2px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 16px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 13px;
+      resize: vertical;
+      transition: border-color 0.3s;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    textarea::placeholder {
+      color: #aaa;
+    }
+    .btn-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    button {
+      flex: 1;
+      padding: 14px 24px;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+    }
+    .btn-secondary {
+      background: #f5f5f5;
+      color: #333;
+    }
+    .btn-secondary:hover {
+      background: #e8e8e8;
+    }
+    .btn-success {
+      background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%) !important;
+    }
+    .status {
+      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+    }
+    .status.success {
+      display: block;
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .status.error {
+      display: block;
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .tips {
+      margin-top: 20px;
+      padding: 16px;
+      background: #f8f9fa;
+      border-radius: 10px;
+      font-size: 13px;
+      color: #666;
+    }
+    .tips strong {
+      color: #333;
+    }
+    .tips ol {
+      margin: 8px 0 0 0;
+      padding-left: 20px;
+    }
+    .tips li {
+      margin: 4px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📋 微信公众号富文本复制工具</h1>
+    <p class="subtitle">粘贴HTML代码，一键复制为富文本，直接粘贴到公众号后台</p>
+    
+    <textarea id="htmlBox" placeholder="在这里粘贴微信公众号兼容的HTML代码...
+
+示例：
+<section style=&quot;padding:20px;&quot;>
+  <p style=&quot;font-size:16px;color:#333;&quot;>你的文章内容...</p>
+</section>"></textarea>
+    
+    <div class="btn-group">
+      <button class="btn-primary" id="copyBtn" onclick="copyRich()">📋 复制富文本</button>
+      <button class="btn-secondary" onclick="clearBox()">🗑️ 清空</button>
+      <button class="btn-secondary" onclick="previewHtml()">👁️ 预览</button>
+    </div>
+    
+    <div id="status" class="status"></div>
+    
+    <div class="tips">
+      <strong>💡 使用说明：</strong>
+      <ol>
+        <li>将生成的微信公众号HTML代码粘贴到上方文本框</li>
+        <li>点击「复制富文本」按钮</li>
+        <li>前往微信公众号后台编辑器，直接 Ctrl+V / Cmd+V 粘贴</li>
+        <li>富文本格式会自动保留，无需再调整样式</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- 预览弹窗 -->
+  <div id="previewModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:1000;overflow:auto;">
+    <div style="background:white;margin:40px auto;max-width:600px;border-radius:12px;position:relative;">
+      <div style="padding:16px 20px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;">
+        <strong>预览效果</strong>
+        <button onclick="closePreview()" style="background:none;border:none;font-size:24px;cursor:pointer;">&times;</button>
+      </div>
+      <div id="previewContent" style="padding:20px;max-height:70vh;overflow:auto;"></div>
+    </div>
+  </div>
+
+  <script>
+    async function copyRich() {
+      const html = document.getElementById('htmlBox').value.trim();
+      const statusEl = document.getElementById('status');
+      const copyBtn = document.getElementById('copyBtn');
+      
+      if (!html) {
+        showStatus('请先粘贴HTML代码', 'error');
+        return;
+      }
+
+      try {
+        const htmlBlob = new Blob([html], { type: 'text/html' });
+        const textBlob = new Blob([html], { type: 'text/plain' });
+        
+        const data = [new ClipboardItem({
+          'text/html': htmlBlob,
+          'text/plain': textBlob
+        })];
+        
+        await navigator.clipboard.write(data);
+        
+        // 成功反馈
+        copyBtn.textContent = '✅ 复制成功！';
+        copyBtn.classList.add('btn-success');
+        showStatus('富文本已复制到剪贴板，现在可以直接粘贴到微信公众号后台', 'success');
+        
+        setTimeout(() => {
+          copyBtn.textContent = '📋 复制富文本';
+          copyBtn.classList.remove('btn-success');
+        }, 2000);
+        
+      } catch (err) {
+        console.error('复制失败:', err);
+        showStatus('复制失败：' + (err.message || '请检查浏览器是否支持剪贴板API，或尝试使用Chrome/Edge浏览器'), 'error');
+      }
+    }
+
+    function showStatus(message, type) {
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = message;
+      statusEl.className = 'status ' + type;
+      
+      if (type === 'success') {
+        setTimeout(() => {
+          statusEl.style.display = 'none';
+        }, 5000);
+      }
+    }
+
+    function clearBox() {
+      document.getElementById('htmlBox').value = '';
+      document.getElementById('status').style.display = 'none';
+    }
+
+    function previewHtml() {
+      const html = document.getElementById('htmlBox').value.trim();
+      if (!html) {
+        showStatus('请先粘贴HTML代码', 'error');
+        return;
+      }
+      document.getElementById('previewContent').innerHTML = html;
+      document.getElementById('previewModal').style.display = 'block';
+    }
+
+    function closePreview() {
+      document.getElementById('previewModal').style.display = 'none';
+    }
+
+    // ESC 关闭预览
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closePreview();
+    });
+  </script>
+</body>
+</html>
