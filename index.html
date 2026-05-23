@@ -28,7 +28,7 @@
     .subtitle { color: #666; font-size: 14px; margin-bottom: 20px; }
     textarea {
       width: 100%;
-      height: 350px;
+      height: 300px;
       border: 2px solid #e0e0e0;
       border-radius: 12px;
       padding: 16px;
@@ -39,6 +39,35 @@
     }
     textarea:focus { outline: none; border-color: #667eea; }
     textarea::placeholder { color: #aaa; }
+    
+    .options {
+      margin: 16px 0;
+      padding: 16px;
+      background: #f8f9fa;
+      border-radius: 10px;
+    }
+    .option-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0;
+    }
+    .option-row input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+    .option-row label {
+      font-size: 14px;
+      color: #333;
+      cursor: pointer;
+    }
+    .option-desc {
+      font-size: 12px;
+      color: #888;
+      margin-left: 26px;
+    }
+    
     .btn-group { display: flex; gap: 12px; margin-top: 16px; }
     button {
       flex: 1;
@@ -70,42 +99,60 @@
     }
     .status.success { display: block; background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
     .status.error { display: block; background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .status.info { display: block; background: #cce5ff; color: #004085; border: 1px solid #b8daff; }
+    
     .tips {
       margin-top: 20px;
       padding: 16px;
-      background: #f8f9fa;
+      background: #fff3cd;
+      border: 1px solid #ffc107;
       border-radius: 10px;
       font-size: 13px;
-      color: #666;
+      color: #856404;
     }
     .tips strong { color: #333; }
-    .tips ol { margin: 8px 0 0 0; padding-left: 20px; }
+    .tips ul { margin: 8px 0 0 0; padding-left: 20px; }
     .tips li { margin: 4px 0; }
+    
+    .clean-stats {
+      font-size: 12px;
+      color: #666;
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>📋 微信公众号富文本复制工具</h1>
-    <p class="subtitle">粘贴HTML代码，一键复制为富文本，直接粘贴到公众号后台</p>
+    <p class="subtitle">粘贴HTML代码，自动清洗 → 复制为富文本 → 直接粘贴到公众号后台</p>
     
     <textarea id="htmlBox" placeholder="在这里粘贴微信公众号兼容的HTML代码..."></textarea>
     
+    <div class="options">
+      <strong>🔧 清洗选项（解决安卓APP空格空行问题）</strong>
+      <div class="option-row">
+        <input type="checkbox" id="optClean" checked>
+        <label for="optClean">自动清洗HTML（推荐开启）</label>
+      </div>
+      <div class="option-desc">删除多余空白、合并连续换行、转换块级标签，确保安卓/网页版显示一致</div>
+    </div>
+    
     <div class="btn-group">
       <button class="btn-primary" id="copyBtn" onclick="copyRich()">📋 复制富文本</button>
-      <button class="btn-secondary" onclick="clearBox()">🗑️ 清空</button>
+      <button class="btn-secondary" onclick="cleanOnly()">🧹 仅清洗</button>
       <button class="btn-secondary" onclick="previewHtml()">👁️ 预览</button>
     </div>
     
     <div id="status" class="status"></div>
+    <div id="cleanStats" class="clean-stats"></div>
     
     <div class="tips">
-      <strong>💡 使用说明：</strong>
-      <ol>
-        <li>将生成的微信公众号HTML代码粘贴到上方文本框</li>
-        <li>点击「复制富文本」按钮</li>
-        <li>前往微信公众号后台编辑器，直接 Ctrl+V / Cmd+V 粘贴</li>
-        <li>样式会保持和预览一致</li>
-      </ol>
+      <strong>⚠️ 为什么需要清洗？</strong>
+      <ul>
+        <li><strong>网页版</strong>：Chrome内核，空白符解析宽松</li>
+        <li><strong>安卓APP</strong>：X5内核，会把隐性空白全变成显式空行/空格</li>
+        <li><strong>清洗后</strong>：两端显示一致，无多余空行</li>
+      </ul>
     </div>
   </div>
 
@@ -121,9 +168,94 @@
   </div>
 
   <script>
+    /**
+     * 微信公众号 HTML 清洗函数
+     * 解决：安卓APP编辑器空格空行问题
+     */
+    function cleanWechatHtml(html) {
+      const originalLength = html.length;
+      
+      // 1. 删除 HTML 注释
+      html = html.replace(/<!--[\s\S]*?-->/g, '');
+      
+      // 2. 删除多余的换行和回车
+      html = html.replace(/[\r\n]+/g, '\n');
+      
+      // 3. 删除标签之间的空白
+      html = html.replace(/>\s+</g, '><');
+      
+      // 4. 将块级标签转换为 <p>
+      const blockTags = ['div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'article', 'header', 'footer'];
+      blockTags.forEach(tag => {
+        // 开标签
+        const openRegex = new RegExp(`<${tag}(\\s+[^>]*)?>`, 'gi');
+        html = html.replace(openRegex, (match, attrs) => `<p${attrs || ''}>`);
+        // 闭标签
+        const closeRegex = new RegExp(`</${tag}>`, 'gi');
+        html = html.replace(closeRegex, '</p>');
+      });
+      
+      // 5. 删除空白的 span 标签
+      html = html.replace(/<span[^>]*>\s*<\/span>/g, '');
+      
+      // 6. 删除空白的 p 标签
+      html = html.replace(/<p[^>]*>\s*<\/p>/g, '');
+      
+      // 7. 合并连续的 &nbsp;（超过2个合并为1个）
+      html = html.replace(/(&nbsp;){2,}/g, '&nbsp;');
+      
+      // 8. 删除连续的 <br>（超过2个合并为2个）
+      html = html.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
+      
+      // 9. 删除 <p> 开头的 <br>
+      html = html.replace(/<p([^>]*)>\s*<br\s*\/?>/gi, '<p$1>');
+      
+      // 10. 删除 </p> 前的 <br>
+      html = html.replace(/<br\s*\/?>\s*<\/p>/gi, '</p>');
+      
+      // 11. 删除行首行尾的普通空格
+      html = html.replace(/<p([^>]*)>\s+/g, '<p$1>');
+      html = html.replace(/\s+<\/p>/g, '</p>');
+      
+      // 12. 清理 style 属性内的换行
+      html = html.replace(/style="([^"]*)"/g, (match, style) => {
+        return `style="${style.replace(/\s+/g, ' ').trim()}"`;
+      });
+      
+      // 13. 删除空的 style 属性
+      html = html.replace(/\s*style="\s*"/g, '');
+      
+      // 14. 最后整理：确保没有连续空行
+      const lines = html.split('\n');
+      const cleanedLines = [];
+      let prevEmpty = false;
+      for (const line of lines) {
+        const isEmpty = !line.trim();
+        if (isEmpty && prevEmpty) continue;
+        cleanedLines.push(line);
+        prevEmpty = isEmpty;
+      }
+      html = cleanedLines.join('\n');
+      
+      const cleanedLength = html.length;
+      const saved = originalLength - cleanedLength;
+      const percent = originalLength > 0 ? ((saved / originalLength) * 100).toFixed(1) : 0;
+      
+      return {
+        html: html,
+        stats: {
+          original: originalLength,
+          cleaned: cleanedLength,
+          saved: saved,
+          percent: percent
+        }
+      };
+    }
+
     async function copyRich() {
-      const html = document.getElementById('htmlBox').value.trim();
+      let html = document.getElementById('htmlBox').value.trim();
       const copyBtn = document.getElementById('copyBtn');
+      const shouldClean = document.getElementById('optClean').checked;
       
       if (!html) {
         showStatus('请先粘贴HTML代码', 'error');
@@ -131,7 +263,14 @@
       }
 
       try {
-        // 直接复制原始HTML，不做任何修改
+        // 清洗HTML
+        if (shouldClean) {
+          const result = cleanWechatHtml(html);
+          html = result.html;
+          showCleanStats(result.stats);
+        }
+        
+        // 复制为富文本
         const htmlBlob = new Blob([html], { type: 'text/html' });
         const textBlob = new Blob([html], { type: 'text/plain' });
         
@@ -155,26 +294,50 @@
       }
     }
 
-    function showStatus(message, type) {
-      const statusEl = document.getElementById('status');
-      statusEl.textContent = message;
-      statusEl.className = 'status ' + type;
-      if (type === 'success') {
-        setTimeout(() => { statusEl.style.display = 'none'; }, 5000);
-      }
-    }
-
-    function clearBox() {
-      document.getElementById('htmlBox').value = '';
-      document.getElementById('status').style.display = 'none';
-    }
-
-    function previewHtml() {
+    function cleanOnly() {
       const html = document.getElementById('htmlBox').value.trim();
       if (!html) {
         showStatus('请先粘贴HTML代码', 'error');
         return;
       }
+      
+      const result = cleanWechatHtml(html);
+      document.getElementById('htmlBox').value = result.html;
+      showCleanStats(result.stats);
+      showStatus('HTML已清洗完成，可以复制或继续编辑', 'info');
+    }
+
+    function showCleanStats(stats) {
+      const el = document.getElementById('cleanStats');
+      if (stats.saved > 0) {
+        el.textContent = `清洗结果：${stats.original.toLocaleString()} → ${stats.cleaned.toLocaleString()} 字节（减少 ${stats.saved.toLocaleString()} 字节，${stats.percent}%）`;
+      } else {
+        el.textContent = `清洗结果：${stats.cleaned.toLocaleString()} 字节（无需清洗）`;
+      }
+    }
+
+    function showStatus(message, type) {
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = message;
+      statusEl.className = 'status ' + type;
+      if (type === 'success' || type === 'info') {
+        setTimeout(() => { statusEl.style.display = 'none'; }, 5000);
+      }
+    }
+
+    function previewHtml() {
+      let html = document.getElementById('htmlBox').value.trim();
+      if (!html) {
+        showStatus('请先粘贴HTML代码', 'error');
+        return;
+      }
+      
+      // 预览时也先清洗
+      if (document.getElementById('optClean').checked) {
+        const result = cleanWechatHtml(html);
+        html = result.html;
+      }
+      
       document.getElementById('previewContent').innerHTML = html;
       document.getElementById('previewModal').style.display = 'block';
     }
