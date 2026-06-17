@@ -119,6 +119,59 @@
       color: #666;
       margin-top: 8px;
     }
+
+    .import-section {
+      margin-bottom: 16px;
+      padding: 16px;
+      background: #f0f4ff;
+      border: 1px solid #c7d4f8;
+      border-radius: 10px;
+    }
+    .import-section strong {
+      display: block;
+      margin-bottom: 10px;
+      font-size: 14px;
+      color: #333;
+    }
+    .import-row {
+      display: flex;
+      gap: 8px;
+    }
+    .import-row input[type="text"] {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1.5px solid #c7d4f8;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      color: #333;
+      background: white;
+      transition: border-color 0.3s;
+    }
+    .import-row input[type="text"]:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    .btn-import {
+      flex-shrink: 0;
+      padding: 10px 18px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.3s;
+    }
+    .btn-import:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-import:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+    .import-hint {
+      font-size: 12px;
+      color: #888;
+      margin-top: 7px;
+    }
   </style>
 </head>
 <body>
@@ -126,6 +179,18 @@
     <h1>📋 微信公众号富文本复制工具</h1>
     <p class="subtitle">粘贴HTML代码，自动清洗 → 复制为富文本 → 直接粘贴到公众号后台</p>
     
+    <div class="import-section">
+      <strong>🔗 从 GitHub 导入 HTML</strong>
+      <div class="import-row">
+        <input type="text" id="githubUrl"
+          placeholder="GitHub 链接或 owner/repo/branch/path/to/file.html">
+        <button class="btn-import" id="importBtn" onclick="importFromGithub()">⬇️ 导入</button>
+      </div>
+      <div class="import-hint">
+        支持：普通页面链接（github.com/…/blob/…）、Raw 链接（raw.githubusercontent.com/…）、或简写 <code>owner/repo/branch/path.html</code>
+      </div>
+    </div>
+
     <textarea id="htmlBox" placeholder="在这里粘贴微信公众号兼容的HTML代码..."></textarea>
     
     <div class="options">
@@ -270,14 +335,40 @@
           showCleanStats(result.stats);
         }
         
-        // 复制为富文本
-        const htmlBlob = new Blob([html], { type: 'text/html' });
-        const textBlob = new Blob([html], { type: 'text/plain' });
-        
-        await navigator.clipboard.write([new ClipboardItem({
-          'text/html': htmlBlob,
-          'text/plain': textBlob
-        })]);
+        let copied = false;
+
+        // 优先使用 Clipboard API（支持富文本）
+        if (navigator.clipboard && window.ClipboardItem) {
+          try {
+            const htmlBlob = new Blob([html], { type: 'text/html' });
+            const textBlob = new Blob([html], { type: 'text/plain' });
+            await navigator.clipboard.write([new ClipboardItem({
+              'text/html': htmlBlob,
+              'text/plain': textBlob
+            })]);
+            copied = true;
+          } catch (clipErr) {
+            // 内容过大或权限问题时降级到 execCommand
+            console.warn('Clipboard API 失败，尝试降级方案:', clipErr);
+          }
+        }
+
+        // 降级方案：使用 execCommand（对大内容兼容性更好，但部分浏览器已弃用）
+        if (!copied) {
+          const ta = document.createElement('textarea');
+          ta.value = html;
+          ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+          document.body.appendChild(ta);
+          try {
+            ta.focus();
+            ta.select();
+            const ok = document.execCommand('copy');
+            if (!ok) throw new Error('execCommand 复制失败');
+            copied = true;
+          } finally {
+            document.body.removeChild(ta);
+          }
+        }
         
         copyBtn.textContent = '✅ 复制成功！';
         copyBtn.classList.add('btn-success');
@@ -291,6 +382,51 @@
       } catch (err) {
         console.error('复制失败:', err);
         showStatus('复制失败：' + (err.message || '请检查浏览器是否支持剪贴板API'), 'error');
+      }
+    }
+
+    function toRawUrl(input) {
+      input = input.trim();
+      // 已经是 raw URL
+      if (input.startsWith('https://raw.githubusercontent.com/')) return input;
+      // 普通 github.com blob 链接：转为 raw
+      const blobMatch = input.match(/^https?:\/\/github\.com\/([^/]+\/[^/]+)\/blob\/(.+)$/);
+      if (blobMatch) {
+        return `https://raw.githubusercontent.com/${blobMatch[1]}/${blobMatch[2]}`;
+      }
+      // 简写 owner/repo/branch/path
+      if (!input.startsWith('http')) {
+        return `https://raw.githubusercontent.com/${input}`;
+      }
+      return null;
+    }
+
+    async function importFromGithub() {
+      const urlInput = document.getElementById('githubUrl');
+      const importBtn = document.getElementById('importBtn');
+      const raw = toRawUrl(urlInput.value);
+
+      if (!raw) {
+        showStatus('无法识别的 GitHub 链接格式', 'error');
+        return;
+      }
+
+      importBtn.disabled = true;
+      importBtn.textContent = '⏳ 导入中…';
+      showStatus('正在从 GitHub 获取文件…', 'info');
+
+      try {
+        const resp = await fetch(raw);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status} - ${resp.statusText}`);
+        const text = await resp.text();
+        document.getElementById('htmlBox').value = text;
+        showStatus(`✅ 已导入 ${text.length.toLocaleString()} 字节（来自 ${raw}）`, 'success');
+      } catch (err) {
+        console.error('导入失败:', err);
+        showStatus('导入失败：' + (err.message || '网络错误，请检查链接或仓库权限'), 'error');
+      } finally {
+        importBtn.disabled = false;
+        importBtn.textContent = '⬇️ 导入';
       }
     }
 
